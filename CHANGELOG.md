@@ -6,6 +6,7 @@ Release history starts at v3.0.0.
 
 - Added the Simplified Chinese Windows PC task “3.8 拉海洛方块·逆转” at the top of Daily Activities. Open the event stage list and keep the game in the foreground. The task attempts unlocked, uncleared difficulties and returns to the list after each clear.
 - Supports both two-tray and three-tray boards, including the 4,500-point stage with fixed gray corner blocks. The task checks the placement preview before dropping each piece.
+- Resume a points or medal challenge from an open board. When started there, the task stops at the reward screen.
 
 ## v3.8.5-beta.2 (2026-11-18)
 
