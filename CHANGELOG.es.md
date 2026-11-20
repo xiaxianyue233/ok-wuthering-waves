@@ -4,9 +4,17 @@ El historial comienza en v3.0.0.
 
 ## Unreleased
 
+- Rahai Blocks permite continuar un tablero abierto de puntos o medallas. La primera victoria deja abierta la ventana de recompensas y las victorias al repetir se reconocen aunque el juego vuelva directamente a la lista de fases.
+
+## v3.8.6 (2026-11-20)
+
+- Se añadió la tarea «3.8 GalGame» a Actividades diarias para el cliente en chino simplificado. Iníciala desde la página del evento «第二索拉：未名之梦» para avanzar el semestre y reclamar las recompensas disponibles.
+
+## v3.8.5 (2026-11-20)
+
 - Se añadió la tarea «3.8 拉海洛方块·逆转» al inicio de Actividades diarias para el cliente de Windows en chino simplificado. Abre la lista de niveles del evento y mantén el juego en primer plano. La tarea intenta superar las dificultades desbloqueadas y pendientes, y vuelve a la lista después de cada victoria.
 - Compatible con tableros de dos y tres bandejas, incluida la fase de 4500 puntos con bloques grises fijos en las esquinas. La tarea comprueba la vista previa antes de soltar cada pieza.
-- Permite reanudar un desafío de puntos o medallas desde un tablero abierto. Al iniciarse desde el tablero, la tarea se detiene en la pantalla de recompensas.
+- Se corrigió la interrupción del teletransporte de recuperación cuando se superponen los iconos del mapa. Si el punto más cercano está bloqueado, la tarea prueba otros puntos cercanos.
 
 ## v3.8.5-beta.2 (2026-11-18)
 

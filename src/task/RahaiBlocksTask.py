@@ -9,6 +9,7 @@ from src.task.rahai_blocks import (
 from src.task.task_icons import task_icon
 
 
+REPLAY_SUCCESS = re.compile(r"^挑\s*战\s*成\s*功$")
 STAGE_PROGRESS = re.compile(r"进行中.*?(\d+)\s*[/／]\s*(\d+)")
 STAGE_STATUS = re.compile(r"进行中|已(?:通关|完成)|(?:\d+\s*(?:天|小时|分钟))")
 
@@ -21,7 +22,7 @@ class RahaiBlocksTask(BaseTask):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.name = "3.8 拉海洛方块·逆转"
-        self.description = "从活动关卡列表挑战所有已解锁关卡，或从已打开的棋盘继续当前关卡。请保持简体中文 PC 客户端在前台。"
+        self.description = "从活动关卡列表挑战已解锁且未通关的关卡，或从已打开的棋盘继续当前关卡。请保持简体中文 PC 客户端在前台。"
         self.group_name = "Daily Activities"
         self.group_icon = task_icon("category-daily")
         self.supported_languages = ["zh_CN"]
@@ -135,13 +136,16 @@ class RahaiBlocksTask(BaseTask):
         try:
             if not self.wait_until(self._ready_board, time_out=15):
                 raise ChallengeFailed("无法识别棋盘。")
-            self._play_board(interaction)
+            result = self._play_board(interaction)
         except ChallengeFailed:
             self._leave_challenge()
             raise
-        self.click(.5, .88, after_sleep=.6)
-        if not self.wait_until(self._stage_details, time_out=5):
-            raise RuntimeError("领取奖励后无法识别关卡详情。")
+        if result == "reward":
+            self.click(.5, .88, after_sleep=.6)
+            if not self.wait_until(self._stage_details, time_out=5):
+                raise RuntimeError("领取奖励后无法识别关卡详情。")
+        elif not self.wait_until(lambda: self._stage_details() or self._stage_list(), time_out=5):
+            raise RuntimeError("挑战成功后无法识别关卡详情或列表。")
         self.log_info(f"已通关：{title.name} · {difficulty}")
 
     def run(self):
@@ -231,6 +235,14 @@ class RahaiBlocksTask(BaseTask):
 
     def _reward(self):
         return self.ocr(.36, .216, .64, .29, match=re.compile(r"^获\s*得$"))
+
+    def _completion(self):
+        # Cleared difficulties can show a short success banner and return without loot.
+        if self._reward():
+            return "reward"
+        if self.ocr(.24, .16, .76, .59, match=REPLAY_SUCCESS):
+            return "replay"
+        return None
 
     def _ready_board(self):
         # The first score challenge includes a manual and three guided clicks.
@@ -324,11 +336,18 @@ class RahaiBlocksTask(BaseTask):
         rejected = set()
         for _ in range(160):
             self.next_frame()
-            board = self._playable_board() or self.wait_until(self._playable_board, time_out=2)
+            board = self._playable_board()
             if not board:
-                if self.wait_until(self._reward, time_out=3):
-                    return
-                raise ChallengeFailed("棋盘消失，未确认通关。")
+                # Poll for completion while waiting for the board to return. A replay can
+                # reach the stage list before a separate completion wait would start.
+                state = self._completion() or self.wait_until(
+                    lambda: self._completion() or self._playable_board(), time_out=5,
+                )
+                if isinstance(state, str):
+                    return state
+                if not state:
+                    raise ChallengeFailed("棋盘消失，未确认通关。")
+                board = state
             if not interaction.clickable():
                 raise RuntimeError("Game lost foreground focus; no further moves were sent.")
             move = choose_move(board, excluded=rejected)
@@ -346,16 +365,19 @@ class RahaiBlocksTask(BaseTask):
             expected, lines = clear_lines(board.mask | move.mask, board.fixed)
             self.log_info(f"Rahai Blocks: slot={move.slot + 1}, rotation={move.turns * 90}, "
                           f"cell=({move.row + 1},{move.col + 1}), lines={lines}")
-            self.sleep(.95 if lines else .38)
-            for _ in range(4):
+            self.sleep(.38)
+            for _ in range(6 if lines else 4):
                 self.next_frame()
+                # Sample scoring clears during the animation to catch a transient banner.
+                if lines and (result := self._completion()):
+                    return result
                 actual = self._read_board()
                 if actual and actual.mask == expected and actual.fixed == board.fixed:
                     break
                 self.sleep(.23)
             else:
-                if lines and self.wait_until(self._reward, time_out=3):
-                    return
+                if lines and (result := self.wait_until(self._completion, time_out=3)):
+                    return result
                 self.log_warning(f"Rahai Blocks: expected={expected:#018x}, "
                                  f"actual={hex(actual.mask) if actual else 'unrecognized'}")
                 raise ChallengeFailed("落块后棋盘与预期状态不符。")

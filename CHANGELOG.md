@@ -4,10 +4,19 @@ Release history starts at v3.0.0.
 
 ## Unreleased
 
-- Added the experimental Simplified Chinese Windows PC task “荣耀之丘·自动对战（实验）”. Select the matching deck strategy and confirm your opening hand in an NPC duel. The task plays cards and sets combat to 2.0×.
+- Rahai Blocks can resume an open score or medal board. First clears preserve the reward popup, and successful replays are recognized when the game returns to the stage list without rewards.
+
+- The experimental Peaks of Prestige task can start at the NPC challenge selection, choose a configured deck for a known opponent, and play at 2× battle speed. Card selection reuses uniquely matched hand cards across rounds. Rekindled is detected, with auto-dueling still pending.
+
+## v3.8.6 (2026-11-20)
+
+- Added the “3.8 GalGame” task under Daily Activities for the Simplified Chinese client. Start on the Second Solaris event page to advance the semester and claim available event rewards.
+
+## v3.8.5 (2026-11-20)
+
 - Added the Simplified Chinese Windows PC task “3.8 拉海洛方块·逆转” at the top of Daily Activities. Open the event stage list and keep the game in the foreground. The task attempts unlocked, uncleared difficulties and returns to the list after each clear.
 - Supports both two-tray and three-tray boards, including the 4,500-point stage with fixed gray corner blocks. The task checks the placement preview before dropping each piece.
-- Resume a points or medal challenge from an open board. When started there, the task stops at the reward screen.
+- Fixed recovery teleporting when overlapping map icons block the nearest waypoint. The task now tries other nearby waypoints.
 
 ## v3.8.5-beta.2 (2026-11-18)
 
