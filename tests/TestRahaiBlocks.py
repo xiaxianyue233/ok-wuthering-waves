@@ -1,9 +1,11 @@
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import cv2
 import numpy as np
 
+from src.task.RahaiBlocksTask import ChallengeFailed, RahaiBlocksTask
 from src.task.rahai_blocks import (
     Board, COLS, ROWS, Piece, canonical_frame, choose_move, clear_lines, placements,
     preview_matches, read_board, score_bar_full,
@@ -52,7 +54,8 @@ class TestRahaiBlocks(unittest.TestCase):
         self.assertFalse(preview_matches(fixture('score'), board, move))
 
     def test_reward_overlay_is_not_playable_and_has_full_bar(self):
-        for board_name, reward_name in (('score', 'reward'), ('score_4500', 'reward_4500')):
+        for board_name, reward_name in (('score', 'reward'), ('score_4500', 'reward_4500'),
+                                        ('medal_start', 'medal_reward')):
             with self.subTest(board=board_name):
                 reward = fixture(reward_name)
                 self.assertIsNone(read_board(reward))
@@ -90,3 +93,100 @@ class TestRahaiBlocks(unittest.TestCase):
     def test_unrelated_and_non_widescreen_frames_are_rejected(self):
         self.assertIsNone(read_board(canonical_frame(np.zeros((720, 1280, 3), np.uint8))))
         self.assertIsNone(canonical_frame(np.zeros((720, 1440, 3), np.uint8)))
+
+
+class TestRahaiBlocksEntry(unittest.TestCase):
+    def test_open_medal_board_takes_priority_over_the_stage_list(self):
+        task = Mock(spec=RahaiBlocksTask)
+        board = read_board(fixture('medal_start'))
+        self.assertIsNotNone(board)
+        task._open_board.return_value = board
+        self.assertEqual(RahaiBlocksTask._start_view(task), (board, None))
+        task._stage_list.assert_not_called()
+
+    def test_without_an_open_board_the_stage_list_remains_an_entry(self):
+        task = Mock(spec=RahaiBlocksTask)
+        task._open_board.return_value = None
+        stages = [object()]
+        task._stage_list.return_value = stages
+        self.assertEqual(RahaiBlocksTask._start_view(task), (None, stages))
+
+
+class TestRahaiBlocksCompletion(unittest.TestCase):
+    def make_task(self):
+        task = Mock(spec=RahaiBlocksTask)
+        task._reward.side_effect = lambda: RahaiBlocksTask._reward(task)
+        task._completion.side_effect = lambda: RahaiBlocksTask._completion(task)
+        return task
+
+    @staticmethod
+    def screen(text):
+        return lambda *args, match: [text] if match.fullmatch(text) else []
+
+    def test_replay_catches_transient_success_after_last_scoring_drop(self):
+        task = self.make_task()
+        task._playable_board.return_value = read_board(fixture('score_4500'))
+        task._place.return_value = True
+        task._read_board.return_value = None
+        task.ocr.side_effect = self.screen('')
+        frame = 0
+
+        def advance():
+            nonlocal frame
+            frame += 1
+            text = {3: '挑 战 成 功', 4: '回转的深空'}.get(frame, '')
+            task.ocr.side_effect = self.screen(text)
+
+        task.next_frame.side_effect = advance
+        with patch('src.task.RahaiBlocksTask.clear_lines', return_value=(0, 1)):
+            self.assertEqual(RahaiBlocksTask._play_board(task, Mock()), 'replay')
+        self.assertEqual(frame, 3)
+        task._place.assert_called_once()
+        task.click.assert_not_called()
+        task.wait_until.assert_not_called()
+
+    def test_disappearing_board_polls_for_replay_success_during_transition(self):
+        task = self.make_task()
+        task._playable_board.return_value = None
+        task.ocr.side_effect = self.screen('')
+
+        def poll(condition, *, time_out):
+            task.ocr.side_effect = self.screen('挑战成功')
+            return condition()
+
+        task.wait_until.side_effect = poll
+        self.assertEqual(RahaiBlocksTask._play_board(task, Mock()), 'replay')
+        task.click.assert_not_called()
+
+    def test_stage_list_and_failure_are_not_success_evidence(self):
+        for text in ('回转的深空', '挑战失败', '4500/4500'):
+            with self.subTest(text=text):
+                task = self.make_task()
+                task._playable_board.return_value = None
+                task.ocr.side_effect = self.screen(text)
+                task.wait_until.side_effect = lambda condition, **kwargs: condition()
+                with self.assertRaisesRegex(ChallengeFailed, '棋盘消失，未确认通关'):
+                    RahaiBlocksTask._play_board(task, Mock())
+
+    def test_board_resume_preserves_the_first_clear_reward(self):
+        task = self.make_task()
+        task._playable_board.return_value = None
+        task.ocr.side_effect = self.screen('获 得')
+        self.assertEqual(RahaiBlocksTask._play_board(task, Mock()), 'reward')
+        task.click.assert_not_called()
+
+    def test_stage_list_clicks_only_a_confirmed_reward(self):
+        for result, click_count in (('reward', 3), ('replay', 2)):
+            with self.subTest(result=result):
+                task = self.make_task()
+                task._stage_details.return_value = True
+                task._ready_board.return_value = True
+                task.wait_until.side_effect = lambda condition, **kwargs: condition()
+                task.ocr.return_value = [object()]
+                start, status, title = object(), object(), Mock()
+                task._challenge_button.side_effect = [start, None]
+                task._play_board.return_value = result
+                RahaiBlocksTask._challenge(task, Mock(), title, status, 1)
+                self.assertEqual(task.click.call_count, click_count)
+                if result == 'reward':
+                    task.click.assert_called_with(.5, .88, after_sleep=.6)

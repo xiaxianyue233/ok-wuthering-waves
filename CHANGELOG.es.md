@@ -2,6 +2,10 @@
 
 El historial comienza en v3.0.0.
 
+## Unreleased
+
+- Rahai Blocks permite continuar un tablero abierto de puntos o medallas. La primera victoria deja abierta la ventana de recompensas y las victorias al repetir se reconocen aunque el juego vuelva directamente a la lista de fases.
+
 ## v3.8.6 (2026-11-20)
 
 - Se añadió la tarea «3.8 GalGame» a Actividades diarias para el cliente en chino simplificado. Iníciala desde la página del evento «第二索拉：未名之梦» para avanzar el semestre y reclamar las recompensas disponibles.

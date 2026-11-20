@@ -2,6 +2,10 @@
 
 Release history starts at v3.0.0.
 
+## Unreleased
+
+- Rahai Blocks can resume an open score or medal board. First clears preserve the reward popup, and successful replays are recognized when the game returns to the stage list without rewards.
+
 ## v3.8.6 (2026-11-20)
 
 - Added the “3.8 GalGame” task under Daily Activities for the Simplified Chinese client. Start on the Second Solaris event page to advance the semester and claim available event rewards.
