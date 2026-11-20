@@ -1,5 +1,6 @@
 """Visible PC board geometry and basic planning for Peaks of Prestige."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from collections.abc import Callable
 import re
 
 import cv2
@@ -54,11 +55,11 @@ def board_image(frame):
     return cv2.resize(frame, (WIDTH, HEIGHT), interpolation=cv2.INTER_AREA)
 
 
-def hand_headers(image):
+def hand_headers(image, header_y=825):
     """Return top-border centers and heights. A partially obscured row is rejected."""
     left, right = 105, 1495
     candidates = []
-    for y in range(825, 835):
+    for y in range(header_y, header_y + 10):
         bright = image[y, left:right].min(axis=1) > 132
         edges = np.flatnonzero(np.diff(np.r_[False, bright, False])).reshape(-1, 2)
         runs = [(left + a, b - a) for a, b in edges if 132 <= b - a <= 161]
@@ -221,7 +222,7 @@ def choose_move(board):
     return None
 
 
-def choose_fusion_move(board):
+def choose_fusion_move(board, excluded_tunes=frozenset()):
     """Deploy the Ice/Fusion deck against early enemy pressure."""
     if len(board.field_names) != len(SLOTS) or unsupported_cards(board, FUSION_CARDS):
         raise ValueError('card profile is incomplete or unsupported')
@@ -264,7 +265,7 @@ def choose_fusion_move(board):
             return 9 if board.round <= 4 else 6
 
         upgrades = [(upgrade_score(card, slot), card, slot) for slot in stage_two for card in board.hand
-                    if card.name in (MACHINE, NOBLE, BEAR)]
+                    if card.name in (MACHINE, NOBLE, BEAR) and (card.name, slot) not in excluded_tunes]
         if upgrades:
             _, upgrade, slot = max(upgrades, key=lambda entry: entry[0])
             if board.energy >= 3:
@@ -291,7 +292,7 @@ def choose_fusion_move(board):
             return value
 
         tunes = [(tune_score(card, slot), card, slot) for slot in stage_one for card in board.hand
-                 if card.cost == 1 and card.name != PIG]
+                 if card.cost == 1 and card.name != PIG and (card.name, slot) not in excluded_tunes]
         if tunes:
             score, material, slot = max(tunes, key=lambda entry: entry[0])
             if score >= 7 or board.count == 1 and empty is not None and cheap_cards == 1 and has_upgrade or board.count >= 4 or has_upgrade and board.energy >= 4:
@@ -311,7 +312,7 @@ def choose_fusion_move(board):
     return None
 
 
-def choose_ripper_move(board, life=None, deck_count=None, used_turtle=False):
+def choose_ripper_move(board, life=None, deck_count=None, used_turtle=False, prioritize_rippers=False):
     """Build the rear Ripper stack and keep adjacent front slots available for the core."""
     if len(board.field_names) != len(SLOTS) or unsupported_cards(board, RIPPER_CARDS):
         raise ValueError('card profile is incomplete or unsupported')
@@ -338,17 +339,36 @@ def choose_ripper_move(board, life=None, deck_count=None, used_turtle=False):
     heron = first(HERON)
     if board.energy >= 3 and life is not None and life <= 18 and heron:
         return Move('morph', heron)
-    if pig and board.energy <= 4 and len(board.hand) >= 3:
+    if pig and board.energy <= 4 and (len(board.hand) >= 3 or prioritize_rippers and ripper):
         return Move('morph', pig)
     rear_material = [s for s in RIPPER_BACK if board.stages[s] in (1, 2)]
     rear_ready = next((s for s in rear_material if board.stages[s] == 2), None)
     if ripper and rear_ready is not None:
         if board.energy >= 3:
             return Move('tune', ripper, rear_ready)
+        spare_order = (BEAR, HERON, PUPPET, MACHINE)
+        if prioritize_rippers:
+            spare_order += (PUFFER, TURTLE)
         if board.energy == 2:
-            spare = first(BEAR, HERON, PUPPET, MACHINE)
+            spare = first(*spare_order)
             if spare:
                 return Move('recycle', spare)
+        if prioritize_rippers and board.energy == 1:
+            # Commit to a two-card recovery only if both spares are already visible.
+            if sum(card.name in spare_order for card in board.hand) >= 2:
+                return Move('recycle', first(*spare_order))
+    if prioritize_rippers and not ripper and board.field_names.count(RIPPER) == 1:
+        # Use a front-row taunt and draw two cards while looking for the second Ripper.
+        front_puffer = next((s for s in RIPPER_FRONT
+                             if board.field_names[s] == PUFFER and board.stages[s] == 1), None)
+        material = first(HUNTER, VANGUARD)
+        if front_puffer is not None and material:
+            return Move('tune', material, front_puffer)
+        puffer = first(PUFFER)
+        if puffer and material and board.energy >= 2 and can_deploy and all(
+            not board.occupied[s] for s in RIPPER_FRONT
+        ):
+            return Move('summon', puffer, front)
     rear_base = next((s for s in rear_material if board.stages[s] == 1), None)
     if rear_base is not None:
         base = board.field_names[rear_base]
@@ -356,6 +376,9 @@ def choose_ripper_move(board, life=None, deck_count=None, used_turtle=False):
         if material:
             return Move('tune', material, rear_base)
     if back is not None and can_deploy and not rear_material and board.field_names.count(RIPPER) < 2:
+        if prioritize_rippers and first(VANGUARD) and (base := first(HUNTER, PIG)):
+            # Preserve toughness from the base and inherit stealth from Vanguard when tuning.
+            return Move('summon', base, back)
         vanguard = first(VANGUARD)
         if vanguard:
             return Move('summon', vanguard, back)
@@ -380,8 +403,87 @@ def choose_ripper_move(board, life=None, deck_count=None, used_turtle=False):
     puppet = first(PUPPET)
     if puppet and can_draw_three and len(board.hand) <= 5 and board.energy >= 1:
         return Move('morph', puppet)
-    if can_deploy and front is not None and board.count <= (2 if APE not in board.field_names else 3):
+    front_deploy_limit = 2 if APE not in board.field_names else 3
+    if prioritize_rippers and board.field_names.count(RIPPER) < 2 and board.round <= 3:
+        front_deploy_limit = 1
+    if can_deploy and front is not None and board.count <= front_deploy_limit:
         base = first(PUFFER, HUNTER, TURTLE, PUPPET, VANGUARD, PIG)
         if base:
             return Move('summon', base, front)
     return None
+
+
+@dataclass(frozen=True)
+class DuelPlan:
+    profile: str
+    deck: str
+    duelist: str
+    duelist_tile: tuple[int, int]
+    doctrine: str
+    doctrine_tile: tuple[int, int]
+
+
+RIPPER_PLAN = DuelPlan('双镰坚守（坎特蕾拉）', '双镰坚守', '坎特蕾拉', (263, 278), '适者生存', (1513, 237))
+BRANT_PLAN = replace(RIPPER_PLAN, profile='双镰坚守（布兰特）')
+FUSION_PLAN = DuelPlan('冰火调谐（珂莱塔）', '冰火调谐', '珂莱塔', (263, 556), '致命弱点', (1513, 237))
+
+# These choices refer to saved decks. They never create or overwrite a deck.
+OPPONENT_PLANS = {'布兰特': BRANT_PLAN, '夏空': FUSION_PLAN, '露帕': RIPPER_PLAN}
+
+
+def challenge_plan(opponent, current_deck):
+    return OPPONENT_PLANS.get(opponent) or next(
+        (plan for plan in (RIPPER_PLAN, FUSION_PLAN) if plan.deck == current_deck), None)
+
+
+@dataclass(frozen=True)
+class DuelRules:
+    round_limit: int
+    round_pattern: re.Pattern
+    verify_move: Callable[[Board, Move, Board | None], bool]
+
+
+def classic_move_verified(before, move, after):
+    if not after or after.round != before.round:
+        return False
+    if move.kind == 'recycle_board':
+        return after.energy == before.energy + 1 and after.count == before.count - 1 and not after.occupied[move.slot]
+    if move.kind == 'core':
+        return after.energy == before.energy and after.count == before.count + 1 and after.occupied[move.slot]
+    if move.kind == 'recycle':
+        return after.energy == before.energy + 1 and after.count == before.count
+    if move.kind == 'morph':
+        delta = 2 if move.card.name == PIG else -move.card.cost
+        return after.energy == before.energy + delta and after.count == before.count
+    if move.kind == 'tune':
+        return (after.energy == before.energy - move.card.cost and after.count == before.count
+                and after.stages[move.slot] == before.stages[move.slot] + move.card.cost)
+    return (after.energy == before.energy - move.card.cost and after.count == before.count + 1
+            and after.occupied[move.slot])
+
+
+CLASSIC_RULES = DuelRules(8, ROUND_RE, classic_move_verified)
+RULES_BY_EVENT = {'classic': CLASSIC_RULES}
+
+
+def detect_duel_event(text):
+    if any(marker in text for marker in ('激斗重燃', '领域', '奇藏')):
+        return 'rekindled'
+    if re.search(r'第\s*8\s*回合', text):
+        return 'classic'
+    return None
+
+
+def card_fingerprint(image, x, y, field=False):
+    """Read the center of the illustration without the hover border or stats."""
+    artwork = image[y + 40:y + (117 if field else 64), x - 42:x + 42]
+    if not artwork.size:
+        return None
+    return cv2.resize(artwork, (28, 8), interpolation=cv2.INTER_AREA)
+
+
+def same_card_art(first, second):
+    if first is None or second is None:
+        return False
+    difference = cv2.absdiff(first, second)
+    return float(difference.mean()) <= 4 and float(np.quantile(difference, .95)) <= 14
