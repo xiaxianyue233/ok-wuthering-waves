@@ -592,7 +592,7 @@ class BaseChar:
         self._resonance_available = False
 
     def click_liberation(self, con_less_than=-1, send_click=False, wait_if_cd_ready=0.1,
-                         animation_min_duration=0, click_f=True):
+                         animation_min_duration=0, click_f=True, input_timeout=None):
         """尝试点击并释放共鸣解放。
 
         Args:
@@ -615,7 +615,10 @@ class BaseChar:
         last_click = 0
         clicked = False
         if not self.task.in_liberation:
+            input_deadline = None if input_timeout is None else time.monotonic() + input_timeout
             while self.liberation_available():  # clicked and still in team wait for animation
+                if input_deadline is not None and time.monotonic() >= input_deadline:
+                    return False
                 self.logger.debug(f'click_liberation liberation_available click')
                 if send_click:
                     self.click(interval=0.1)

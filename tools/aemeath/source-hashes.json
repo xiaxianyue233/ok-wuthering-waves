@@ -1,0 +1,41 @@
+{
+  "src/task/BaseCombatTask.py": [
+    "14c75a8ffbd0b239f23367845eaf2047df9ec1e9877e27c72373da9af64f6b58",
+    "58ff3aa0d04cfd13a1e0fb3311c895fec2879de7e7d70af27e1fb9fc9c6febe6",
+    "7daa6136aa149478fe70b2d97e735b2bf9fe55769a9f5ed1ad56a6ba755e4a31",
+    "7fae32db020a4938d036c6481fb2c38af6312f0f8373c88fe608c273ec3137f9"
+  ],
+  "src/task/AutoCombatTask.py": [
+    "5a2745060107c860022d4a91928ade659aa0576309b26999ae90231fa10b675a",
+    "894eeb41d4cb00640c78a96f1750b1a5e1813a83cad7036f09d7afc3b18698b9"
+  ],
+  "src/char/BaseChar.py": [
+    "0142683439781c86b96a011273738a42f3d0fc01f5bbb021d7726b46328c2f54",
+    "28d44d36735c8b9dff778283d29e079b9aac53a3075e42dd2da33f1c868c784e"
+  ],
+  "src/char/CharFactory.py": [
+    "8e632aacc945b4df521441f272ca99855a0595d7086b9a744e80085a51060311",
+    "d25ba5e522c7103944a807ea055a41cb4d39748faf270ef5d0523816bb740cfe"
+  ],
+  "src/char/CustomCharLoader.py": [
+    "52d7ebe7f83c2d166afd964c8baaa67c32248e9d960ca6bc1f0288e437777c96"
+  ],
+  "src/gui/CharacterCodeTab.py": [
+    "c2f26ec25be2109176fac68a9d88355894218cac9a1072c08abd8201c3a8a279"
+  ],
+  "src/combat/InputPacing.py": [
+    "969f6e7a842218806007c0b1d26d869da4855aacdd629e79ac8e9c28b652cc7e"
+  ],
+  "ok/device/interaction_methods/post_message.py": [
+    "642851ae1f484d476a8fa27166dba6d17f5f62a2d1a0bdc609e21f96b89891dc",
+    "d597e326aa8a340393598cfe2ea2eaf75bbd0d175e40e564df4ddb7a958e7135"
+  ],
+  "ok/device/interaction_methods/pynput.py": [
+    "144bda7c73448de77bffd0ada61d572ca68d52dcd866dd8026bf17eb0cb84aaf",
+    "5565b441cc955617bded36ea46234801bbc3aab27498f89412e4d0b7105b4dae"
+  ],
+  "ok/device/interaction_methods/browser.py": [
+    "d5abaf0c17eedbc8cf696356bc694c55b6fcae83c8fee835f0bbceb935eff26a",
+    "f57fce27418261d553f7a72142affbc5380f365c8ac7292f43e27c7cea00f1ff"
+  ]
+}

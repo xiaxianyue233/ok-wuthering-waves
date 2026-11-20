@@ -1,0 +1,7 @@
+src/task/BaseCombatTask.py
+src/task/AutoCombatTask.py
+src/char/BaseChar.py
+src/char/CharFactory.py
+src/char/CustomCharLoader.py
+src/gui/CharacterCodeTab.py
+src/combat/InputPacing.py

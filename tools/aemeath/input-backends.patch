@@ -1,0 +1,142 @@
+--- a/ok/device/interaction_methods/post_message.py
++++ b/ok/device/interaction_methods/post_message.py
+@@ -15,6 +15,8 @@
+ logger = Logger.get_logger(__name__)
+ 
+ 
++from src.combat.InputPacing import before_press, tap_duration
++
+ class PostMessageInteraction(BaseInteraction):
+ 
+     def __init__(self, capture: BaseCaptureMethod, hwnd_window):
+@@ -34,12 +36,13 @@
+     def send_key(self, key, down_time=0.01):
+         super().send_key(key, down_time)
+         self.send_key_down(key)
+-        time.sleep(down_time)
++        time.sleep(tap_duration(down_time))
+         self.send_key_up(key)
+ 
+     def send_key_down(self, key, activate=True):
+         if activate:
+             self.try_activate()
++        before_press("key", key)
+         if is_mouse_button(key):
+             btn = get_mouse_button(key)
+             mk = MK_XBUTTON1 if btn == XBUTTON1 else MK_XBUTTON2
+@@ -175,9 +178,10 @@
+             btn_mk = win32con.MK_RBUTTON
+             btn_up = win32con.WM_RBUTTONUP
+ 
++        before_press("mouse", key)
+         self.post(btn_down, btn_mk, long_position
+                   )
+-        time.sleep(down_time)
++        time.sleep(tap_duration(down_time))
+         self.post(btn_up, 0, long_position
+                   )
+ 
+@@ -198,6 +202,7 @@
+         else:
+             action = win32con.WM_RBUTTONDOWN
+             btn = win32con.MK_RBUTTON
++        before_press("mouse", key)
+         self.post(action, btn, long_position)
+ 
+     def update_mouse_pos(self, x, y, activate=True):
+--- a/ok/device/interaction_methods/pynput.py
++++ b/ok/device/interaction_methods/pynput.py
+@@ -7,6 +7,8 @@
+ from ok.util.process import is_admin
+ 
+ logger = Logger.get_logger(__name__)
++
++from src.combat.InputPacing import before_press, tap_duration
+ 
+ class PynputInteraction(BaseInteraction):
+     KEY_MAP = {
+@@ -67,8 +69,9 @@
+             return
+ 
+         controller, parsed_key = self._key_controller(key)
++        before_press("key", key)
+         controller.press(parsed_key)
+-        time.sleep(down_time)
++        time.sleep(tap_duration(down_time))
+         controller.release(parsed_key)
+ 
+     def send_key_down(self, key):
+@@ -77,6 +80,7 @@
+             return
+ 
+         controller, parsed_key = self._key_controller(key)
++        before_press("key", key)
+         controller.press(parsed_key)
+ 
+     def send_key_up(self, key):
+@@ -161,8 +165,9 @@
+             time.sleep(0.02)
+ 
+         button = self.get_mouse_button(key)
++        before_press("mouse", key)
+         controller.press(button)
+-        time.sleep(down_time)
++        time.sleep(tap_duration(down_time))
+         controller.release(button)
+ 
+         if current_pos:
+@@ -182,6 +187,7 @@
+             time.sleep(0.02)
+ 
+         button = self.get_mouse_button(key)
++        before_press("mouse", key)
+         controller.press(button)
+ 
+     def get_mouse_button(self, key):
+--- a/ok/device/interaction_methods/browser.py
++++ b/ok/device/interaction_methods/browser.py
+@@ -5,6 +5,8 @@
+ from ok.util.logger import Logger
+ 
+ logger = Logger.get_logger(__name__)
++
++from src.combat.InputPacing import before_press, tap_duration
+ 
+ class BrowserInteraction(BaseInteraction):
+     def __init__(self, capture):
+@@ -79,6 +81,8 @@
+     def send_key(self, key, down_time=0.02):
+         mapped_key = self._map_key(key)
+         logger.debug(f'BrowserInteraction send_key {key}')
++        before_press('key', key)
++        down_time = tap_duration(down_time)
+ 
+         async def _act():
+             await self.capture.page.keyboard.press(mapped_key, delay=down_time * 1000)
+@@ -91,6 +95,7 @@
+         async def _act():
+             await self.capture.page.keyboard.down(mapped_key)
+ 
++        before_press("key", key)
+         self._run_action(_act())
+ 
+     def send_key_up(self, key):
+@@ -107,6 +112,8 @@
+             button = "right"
+         elif key == "middle":
+             button = "middle"
++
++        before_press("mouse", button)
+ 
+         async def _act():
+             if x != -1 and y != -1:
+@@ -152,6 +159,9 @@
+         elif key == "middle":
+             button = "middle"
+ 
++        before_press("mouse", button)
++        down_time = tap_duration(down_time)
++
+         async def _act():
+             if x != -1 and y != -1:
+                 await self.capture.page.mouse.click(x, y, button=button, delay=down_time * 1000)

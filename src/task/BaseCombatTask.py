@@ -9,10 +9,11 @@ import numpy as np
 from ok import Logger, Config
 from ok import color_range_to_bound
 from ok import safe_get
+from src.combat.InputPacing import CombatInputPacing, switch_retry_interval
 from src import text_white_color
 from src.char import BaseChar
 from src.char.BaseChar import SwitchPriority, dot_color  # noqa
-from src.char.CharFactory import get_char_by_pos
+from src.char.CharFactory import apply_team_char_classes, get_char_by_pos
 from src.combat.CombatCheck import CombatCheck
 from src.task.BaseWWTask import isolate_white_text_to_black, binarize_for_matching
 
@@ -76,6 +77,7 @@ class BaseCombatTask(CombatCheck):
         self.char_texts = ['char_1_text', 'char_2_text', 'char_3_text']  # 角色文本标识符列表
         self.mouse_pos = None  # 当前鼠标位置
         self.combat_start = 0  # 战斗开始时间戳
+        self._rotation_pacing = CombatInputPacing(lambda seconds: self.executor.sleep(seconds))
         self._abyss_force_combat_until = 0
         self._abyss_combat_active = False
         self._abyss_timer_checked_at = 0
@@ -579,7 +581,7 @@ class BaseCombatTask(CombatCheck):
         try:
             while self.in_combat():
                 logger.debug(f'combat_once loop {self.chars}')
-                self.get_current_char().perform()
+                self.perform_current_char()
         except CharDeadException as e:
             raise e
         except NotInCombatException as e:
@@ -781,6 +783,10 @@ class BaseCombatTask(CombatCheck):
         switch_to.has_intro = has_intro
         switch_to.has_sub_dps_intro = has_intro and current_char.is_sub_dps
 
+    def perform_current_char(self):
+        with self._rotation_pacing.active():
+            self.get_current_char().perform()
+
     def switch_next_char(self, current_char, post_action=None, free_intro=False, target_low_con=False):
         """切换到下一个最优角色。
 
@@ -816,59 +822,14 @@ class BaseCombatTask(CombatCheck):
         # if self.debug:
         #     self.screenshot(f'switch_next_char_{current_con}')
         from src.char.ShoreKeeper import ShoreKeeper
-        last_click = 0
-        start = time.time()
+        start = time.monotonic()
+        deadline = start + self.switch_char_time_out
+        next_attempt = start
+        attempts = 0
         while True:
-            if not (isinstance(switch_to, ShoreKeeper) and has_intro):
-                self.check_combat()
-            now = time.time()
-            _, current_index, _ = self.in_team()
-            if current_index == current_char.index:
-                self.update_lib_portrait_icon()
-                refreshed_has_intro = has_intro or current_char.is_con_full()
-                if refreshed_has_intro != has_intro:
-                    has_intro = refreshed_has_intro
-                    switch_to = self._choose_switch_target(current_char, has_intro,
-                                                           target_low_con=target_low_con)
-                    if not switch_to or switch_to == current_char:
-                        logger.warning(
-                            f"{current_char} can't find next char to switch to after intro refresh, "
-                            f"performing too fast add a normal attack")
-                        current_char.continues_normal_attack(0.2)
-                        return
-                    logger.info(f'switch_next_char refreshed target after intro became available: {switch_to}')
-                self._apply_intro_flags(current_char, switch_to, has_intro)
-                if has_intro:
-                    current_char.f_break(check_f_on_switch=True)
-            if switch_to.wait_switch():
-                self.click()
-                self.sleep(0.1)
-                continue
-            if now - last_click > 0.1:
-                self.send_key(switch_to.index + 1)
-                self.sleep(0.001)
-                last_click = now
-                self.log_debug('switch not detected, send click')
-                self.click()
-                self.sleep(0.001)
-            in_team, current_index, size = self.in_team()
-            if not in_team:
-                logger.info(f'not in team while switching chars_{current_char}_to_{switch_to} {now - start}')
-                # if self.debug:
-                #     self.screenshot(f'not in team while switching chars_{current_char}_to_{switch_to} {now - start}')
-                # Intro animations can briefly hide the whole party HUD.
-                # Wait for it to return before deciding that combat ended.
-                if now - start > self.switch_char_time_out:
-                    self.raise_not_in_combat(
-                        f'switch too long failed chars_{current_char}_to_{switch_to}, {now - start}')
-                self.next_frame()
-                continue
-            if current_index != switch_to.index:
-                if now - start > 10:
-                    if self.debug:
-                        self.screenshot(f'switch_not_detected_{current_char}_to_{switch_to}')
-                    self.raise_not_in_combat('failed switch chars')
-            else:
+            in_team, current_index, _ = self.in_team()
+            now = time.monotonic()
+            if in_team and current_index == switch_to.index:
                 self.in_liberation = False
                 if not has_intro:
                     current_char.f_break(check_f_on_switch=True)
@@ -880,12 +841,33 @@ class BaseCombatTask(CombatCheck):
                     self.add_freeze_duration(current_time, switch_to.intro_motion_freeze_duration, -100)
                     current_char.last_outro_time = current_time
                 break
+            if now >= deadline:
+                self.raise_not_in_combat(f'switch not confirmed after {attempts} attempts: {current_char} -> {switch_to}')
+            # An intro can hide the HUD. Wait for a visible current role before sending another key.
+            if in_team and current_index == current_char.index:
+                if not (isinstance(switch_to, ShoreKeeper) and has_intro):
+                    self.check_combat()
+                if attempts == 0:
+                    self.update_lib_portrait_icon()
+                    if not has_intro and current_char.is_con_full():
+                        has_intro = True
+                        switch_to = self._choose_switch_target(current_char, has_intro, target_low_con=target_low_con)
+                        if not switch_to or switch_to == current_char:
+                            current_char.continues_normal_attack(0.2)
+                            return
+                    self._apply_intro_flags(current_char, switch_to, has_intro)
+                if attempts < 3 and now >= next_attempt and not switch_to.wait_switch():
+                    if attempts == 0 and has_intro:
+                        current_char.f_break(check_f_on_switch=True)
+                    if self.send_key(switch_to.index + 1):
+                        attempts += 1
+                    next_attempt = time.monotonic() + switch_retry_interval()
             self.next_frame()
 
         if post_action:
             logger.debug(f'post_action {post_action}')
             post_action(switch_to, has_intro)
-        logger.info(f'switch_next_char end {(current_char.last_switch_time - start):.3f}s')
+        logger.info(f'switch_next_char end {time.monotonic() - start:.3f}s')
 
     def find_mouse_forte(self):
         return self.find_one('mouse_forte', horizontal_variance=0.025, vertical_variance=0.015, threshold=0.6,
@@ -1060,6 +1042,8 @@ class BaseCombatTask(CombatCheck):
             if len(self.chars) == 3:
                 self.chars = self.chars[:2]
                 logger.info(f'team size changed to 2')
+
+        apply_team_char_classes(self, self.chars)
 
         for char in self.chars:
             if char is not None:
