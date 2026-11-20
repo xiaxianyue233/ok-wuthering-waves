@@ -278,6 +278,7 @@ config = {
     'version': version,
     'onetime_tasks': [  # tasks to execute
         ["src.task.RahaiBlocksTask", "RahaiBlocksTask"],
+        ["src.task.GloryHillTask", "GloryHillTask"],
         ["src.task.DailyTask", "DailyTask"],
         ["src.task.FarmEchoTask", "FarmEchoTask"],
         ["src.task.NightmareNestTask", "NightmareNestTask"],
